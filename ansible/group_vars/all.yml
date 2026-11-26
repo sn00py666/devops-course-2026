@@ -1,0 +1,7 @@
+---
+app_image: ghcr.io/sn00py666/devops-ci-app
+app_tag: "984660226ec746fa679740e9256683816a7318e1"
+app_platform: linux/amd64
+app_container_name: devops-ci-app
+app_host_port: 5000
+app_internal_port: 5000
