@@ -307,3 +307,49 @@ curl --resolve devops.local:443:192.168.56.101 --cacert ~/devops.crt -I https://
 ```
 
 Для общего аудита запустите `scripts/audit.sh` в Ubuntu под `devops`. В снимке `05-docker-compose` сохранена рабочая пара контейнеров после проверки тома и до добавления прокси.
+
+## 10. Ansible
+
+Проект расположен в `ansible/`. Управляющий узел — Mac с Ansible Core
+2.16.20 и коллекциями из `requirements.yml`. Управляемый узел —
+учебная ВМ Ubuntu Server 24.04, запущенная из чистого снимка в отдельном
+клоне VirtualBox `devops-pr11`. Адрес Host-only — `192.168.56.111`,
+SSH работает на TCP 22. NAT используется для доступа ВМ к APT и GHCR.
+
+| Inventory | Учётная запись | Доступ |
+| --- | --- | --- |
+| `inventory/bootstrap.ini` | `student` | Открытый ключ заранее установлен на ВМ, пароль sudo вводится по запросу |
+| `inventory/prod.ini` | `devops` | Ключ `~/.ssh/devops_vm`, sudo без запроса пароля на учебной ВМ |
+
+Проверьте отпечаток ключа хоста и добавьте его в `known_hosts` на управляющем
+узле. Для bootstrap по ключу заранее добавьте `~/.ssh/devops_vm.pub` в
+`authorized_keys` пользователя `student`. В Git хранятся пути к ключам.
+
+Роли выполняются по порядку:
+
+- `base` устанавливает базовые пакеты, Docker из официального репозитория
+  и QEMU на ARM64 для запуска образа amd64.
+- `ssh` создаёт `devops`, устанавливает открытый ключ, настраивает sudo,
+  отключает парольный вход и включает UFW с TCP 22 и 80.
+- `nginx` устанавливает обратный прокси на TCP 80 и проверяет конфигурацию
+  перед её перечитыванием.
+- `app` загружает выбранный образ из GHCR до изменения контейнера,
+  запускает его и ждёт рабочего HTTP-ответа от `/health`.
+
+Образ — `ghcr.io/sn00py666/devops-ci-app:984660226ec746fa679740e9256683816a7318e1`,
+платформа — `linux/amd64`. Порт контейнера 5000 опубликован только на
+`127.0.0.1:5000` внутри ВМ. Внешняя проверка проходит через Nginx по адресу
+`http://192.168.56.111/health`. Успешный JSON — `{"status":"ok"}`.
+
+```bash
+cd ansible
+ansible-galaxy collection install -r requirements.yml
+ansible-playbook -i inventory/bootstrap.ini site.yml --ask-become-pass
+ansible-playbook site.yml
+ansible-playbook verify.yml
+```
+
+При повторном `site.yml` на уже настроенной ВМ ожидается `changed=0`.
+`verify.yml` проверяет эффективные настройки SSH, состояние, образ и привязку
+портов контейнера, а также HTTP-ответ. Он не меняет конфигурацию. В конце site.yml проверяется также
+/health через Nginx после выполнения handlers.
