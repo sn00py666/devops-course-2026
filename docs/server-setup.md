@@ -180,3 +180,38 @@ ssh -o IdentitiesOnly=yes -i ~/.ssh/devops_vm -p 2222 devops@devops.local 'whoam
 ```
 
 Ожидаемый вывод SSH: `devops` и `devops-vm.devops.local`.
+
+## 8. Веб-сервер
+
+- Пакет Ubuntu — `nginx`. Установка — `sudo apt update && sudo apt install -y nginx`.
+- Конфигурация ресурса — `/etc/nginx/sites-available/devops-site`. В `/etc/nginx/sites-enabled/` находится одноимённая символьная ссылка. Стандартная ссылка `default` удалена, файл в `sites-available` сохранён.
+- На порту `80/tcp` работает постоянное перенаправление `return 301 https://$host$request_uri;`. На `443/tcp` обслуживается `devops.local` с TLS 1.2 и 1.3. Настроены слушатели IPv4 и IPv6.
+- Корень сайта — `/var/www/devops-site`. Владелец — `devops:devops`. Права каталогов — `755`, файлов — `644`. Рабочие процессы Nginx работают под `www-data` и читают содержимое сайта.
+- Для сайта заданы `index index.html`, `try_files $uri $uri/ =404` и `error_page 404 /404.html`. Журналы находятся в `/var/log/nginx/devops-site.access.log` и `/var/log/nginx/devops-site.error.log`. HTTP-блок пишет перенаправления в тот же журнал доступа.
+- Сертификат — `/etc/ssl/certs/devops.crt`, владелец `root:root`, права `644`. Он самоподписанный, содержит SAN `DNS:devops.local` и действует 365 дней с момента выпуска.
+- Закрытый ключ — `/etc/ssl/private/devops.key`, владелец `root:root`, права `600`. Ключ хранится только в Ubuntu. Главный процесс Nginx читает его при загрузке конфигурации.
+
+В Ubuntu сертификат и ключ создаются этими командами:
+
+```bash
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /etc/ssl/private/devops.key \
+  -out /etc/ssl/certs/devops.crt \
+  -subj '/CN=devops.local' \
+  -addext 'subjectAltName=DNS:devops.local'
+sudo chmod 600 /etc/ssl/private/devops.key
+sudo chmod 644 /etc/ssl/certs/devops.crt
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+На Mac открытый сертификат копируется через проверенное ранее SSH-соединение. Для обхода задержки разрешения имён `.local` на Mac при проверке можно явно указать адрес из раздела 2. Имя запроса и проверка SAN сохраняются:
+
+```bash
+scp devops:/etc/ssl/certs/devops.crt ~/devops.crt
+curl --resolve devops.local:443:192.168.56.101 \
+  --cacert ~/devops.crt -I https://devops.local/
+```
+
+Доставка выполняется из каталога `site/` командой `scripts/deploy.sh`. Команда `scripts/deploy.sh --dry-run` показывает план. Для аудита в Ubuntu используется `scripts/audit.sh`.
+
+В снимке `04-nginx-https` сохранено состояние после настройки TLS и редиректа, до доставки страниц из репозитория.

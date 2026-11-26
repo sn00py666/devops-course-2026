@@ -4,6 +4,7 @@ set -euo pipefail
 remote=devops
 remote_dir=/var/www/devops-site
 site_url=https://devops.local/
+site_ip=192.168.56.101
 ca_cert="$HOME/devops.crt"
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(git -C "$script_dir" rev-parse --show-toplevel)
@@ -37,7 +38,7 @@ if [[ ${1-} == --dry-run ]]; then
     exit 0
 fi
 if ! curl --fail --silent --show-error --max-time 8 --noproxy devops.local \
-    --cacert "$ca_cert" --output /dev/null "$site_url"; then
+    --resolve "devops.local:443:$site_ip" --cacert "$ca_cert" --output /dev/null "$site_url"; then
     printf 'HTTPS-проверка после доставки не пройдена.\n' >&2
     exit 1
 fi
