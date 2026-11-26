@@ -10,7 +10,7 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(git -C "$script_dir" rev-parse --show-toplevel)
 site_dir="$repo_root/site"
 
-rsync_args=(-avz --delete --chmod=D755,F644 --itemize-changes)
+rsync_args=(-avz --delete --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r --itemize-changes)
 case "$#:${1-}" in
     0:) ;;
     1:--dry-run) rsync_args+=(--dry-run) ;;
