@@ -273,9 +273,11 @@ cd ~/app
 if [ ! -e .env ]; then
     (
         umask 077
-        printf '%s\n' POSTGRES_DB=app POSTGRES_USER=app DB_HOST=db
-        printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 16)"
-    ) > .env
+        {
+            printf '%s\n' POSTGRES_DB=app POSTGRES_USER=app DB_HOST=db
+            printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 16)"
+        } > .env
+    )
 fi
 chmod 600 .env
 docker compose config --quiet
