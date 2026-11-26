@@ -34,4 +34,4 @@ def index():
             count = cursor.fetchone()[0]
     finally:
         connection.close()
-    return f"Hello from Docker! Visits: {count}\n"
+    return f"Hello from Docker, Котовщиков! Visits: {count}\n"
