@@ -201,6 +201,43 @@ sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -addext 'subjectAltName=DNS:devops.local'
 sudo chmod 600 /etc/ssl/private/devops.key
 sudo chmod 644 /etc/ssl/certs/devops.crt
+```
+
+Восстановите каталог сайта с помощью `sudo install -d -o devops -g devops -m 755 /var/www/devops-site`. Запишите следующую конфигурацию в `/etc/nginx/sites-available/devops-site`.
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+    server_name devops.local;
+    access_log /var/log/nginx/devops-site.access.log;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name devops.local;
+    ssl_certificate     /etc/ssl/certs/devops.crt;
+    ssl_certificate_key /etc/ssl/private/devops.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    root /var/www/devops-site;
+    index index.html;
+    location / {
+        try_files $uri $uri/ =404;
+    }
+    error_page 404 /404.html;
+    access_log /var/log/nginx/devops-site.access.log;
+    error_log /var/log/nginx/devops-site.error.log;
+}
+```
+
+Включите ресурс и примените настройки.
+
+```bash
+sudo ln -sfn /etc/nginx/sites-available/devops-site /etc/nginx/sites-enabled/devops-site
+sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
