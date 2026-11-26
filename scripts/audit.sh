@@ -53,5 +53,29 @@ writable=$(sudo -n find /var/www/devops-site -perm -o+w -print)
 key_mode=$(sudo -n stat -c '%a' /etc/ssl/private/devops.key)
 check 'В ресурсе отсутствуют объекты с записью для всех, права ключа 600' '600:' "$key_mode:$writable"
 
+printf '\n[5] Контейнеризация\n'
+docker_state=$(systemctl is-active docker || true)
+check 'Docker активен' active "$docker_state"
+db_health=$(docker inspect --format '{{.State.Health.Status}}' app-db-1 2>/dev/null || true)
+check 'PostgreSQL в состоянии healthy' healthy "$db_health"
+
+socket_state=unavailable
+if tcp_listeners=$(ss -H -tln); then
+    socket_state=$(awk '
+        $4 ~ /:5000$/ {
+            if ($4 == "127.0.0.1:5000") loopback=1
+            else external=1
+        }
+        $4 ~ /:5432$/ { database=1 }
+        END { print (loopback && !external && !database ? "yes" : "no") }
+    ' <<< "$tcp_listeners")
+fi
+check 'Порт 5000 привязан к loopback, порт 5432 не опубликован' yes "$socket_state"
+
+audit_user=${SUDO_USER:-$(id -un)}
+env_owner_home=$(getent passwd "$audit_user" | cut -d: -f6)
+env_mode=$(stat -c '%a' "$env_owner_home/app/.env" 2>/dev/null || true)
+check 'Права файла ~/app/.env равны 600' 600 "$env_mode"
+
 printf '\nПройдено: %d, не пройдено: %d\n' "$passed" "$failed"
 ((failed == 0))

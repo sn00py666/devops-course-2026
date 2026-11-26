@@ -254,3 +254,56 @@ curl --resolve devops.local:443:192.168.56.101 \
 В снимке `04-nginx-https` сохранено состояние после настройки TLS и редиректа, до доставки страниц из репозитория.
 
 Сценарий задаёт права символической маской `--chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r`. Это эквивалент `D755,F644`, который принимает штатный openrsync на Mac.
+
+## 9. Контейнеризация
+
+Docker Engine 29.10.1, клиент Docker 29.10.1 и плагин Docker Compose v5.8.0 установлены на Ubuntu ARM64 из [официального APT-репозитория Docker](https://docs.docker.com/engine/install/ubuntu/). Пакеты: `docker-ce`, `docker-ce-cli`, `containerd.io`, `docker-buildx-plugin`, `docker-compose-plugin`. Ключ репозитория находится в `/etc/apt/keyrings/docker.asc`, описание источника — в `/etc/apt/sources.list.d/docker.sources`. Служба `docker` включена. В группе `docker` состоит `devops`. После добавления в группу требуется новый вход по SSH.
+
+Проект Compose расположен в `/home/devops/app`. С Mac скопируйте каталог проекта, исключив серверный файл окружения.
+
+```bash
+rsync -avz --delete --exclude=.env --dry-run app/ devops:app/
+rsync -avz --delete --exclude=.env app/ devops:app/
+```
+
+На Ubuntu под `devops` при первом развёртывании создайте `~/app/.env` с правами `600`. Сохраняйте этот файл при повторной доставке, пока используется тот же том СУБД. Пароль генерируется локально. `.env.example` содержит шаблон, а `.gitignore` и `app/.dockerignore` исключают `.env` из репозитория и контекста сборки.
+
+```bash
+cd ~/app
+if [ ! -e .env ]; then
+    (
+        umask 077
+        {
+            printf '%s\n' POSTGRES_DB=app POSTGRES_USER=app DB_HOST=db
+            printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 16)"
+        } > .env
+    )
+fi
+chmod 600 .env
+docker compose config --quiet
+docker compose up -d --build --wait
+docker compose ps
+```
+
+Сервис `app` работает под непривилегированным пользователем `app` и слушает 5000 внутри контейнера. Compose публикует его только на `127.0.0.1:5000` виртуальной машины. Сервис `db` использует `postgres:16-alpine`, доступен приложению по имени `db` в сети `app_backend`. Порт 5432 не публикуется. Запуск приложения ждёт `service_healthy` для базы. Данные базы находятся в именованном томе `app_db_data`, путь в контейнере — `/var/lib/postgresql/data`.
+
+В HTTPS-блоке `/etc/nginx/sites-available/devops-site` добавьте следующий фрагмент. Статический ресурс остаётся на `/`.
+
+```nginx
+location /app/ {
+    proxy_pass http://127.0.0.1:5000/;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Завершающий слеш в `proxy_pass` заменяет префикс `/app/` на `/`. Примените конфигурацию через `sudo nginx -t && sudo systemctl reload nginx`. С Mac проверьте оба ресурса:
+
+```bash
+curl --resolve devops.local:443:192.168.56.101 --cacert ~/devops.crt https://devops.local/app/health
+curl --resolve devops.local:443:192.168.56.101 --cacert ~/devops.crt -I https://devops.local/
+```
+
+Для общего аудита запустите `scripts/audit.sh` в Ubuntu под `devops`. В снимке `05-docker-compose` сохранена рабочая пара контейнеров после проверки тома и до добавления прокси.
